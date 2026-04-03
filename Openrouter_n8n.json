@@ -3,28 +3,6 @@
   "nodes": [
     {
       "parameters": {
-        "model": "nvidia/nemotron-3-nano-30b-a3b:free",
-        "options": {
-          "baseURL": "https://openrouter.ai/api/v1"
-        }
-      },
-      "id": "0df89c90-4c05-4fb7-9b9b-dc2f577792d7",
-      "name": "OpenRouter Chat Model",
-      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
-      "typeVersion": 1,
-      "position": [
-        -544,
-        -432
-      ],
-      "credentials": {
-        "openAiApi": {
-          "id": "0dpVNzH7vvAv7hgX",
-          "name": "Openrouter"
-        }
-      }
-    },
-    {
-      "parameters": {
         "jsCode": "const body = $json.body;\nconst action = body.action || 'chat';\nconst rawId = body.sessionId || ('session_' + Date.now());\nconst sessionId = rawId.replace(/-/g, '_');\n\nreturn [{\n  json: {\n    action,\n    sessionId,\n    prompt: body.prompt || '',\n    history: body.history || [],\n    fileData: body.fileData || null, // Le Base64\n    fileName: body.fileName || '',\n    fileType: body.fileType || ''\n  }\n}];"
       },
       "type": "n8n-nodes-base.code",
@@ -367,7 +345,7 @@
           "parameters": [
             {
               "name": "key",
-              "value": "AIza.........Y"
+              "value": "YOUR GOOGLE API KEY"
             },
             {
               "name": "cx",
@@ -441,21 +419,30 @@
       ],
       "id": "4bbf3f54-8f9a-41cf-b438-aa4c2ef15361",
       "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "model": "qwen/qwen3-coder:free",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        -544,
+        -432
+      ],
+      "id": "6a0d22f2-000e-4ef2-b4e5-d43aa6d91d0e",
+      "name": "OpenRouter Chat Model1",
+      "credentials": {
+        "openRouterApi": {
+          "id": "oJypg1iVY081jvBn",
+          "name": "OpenRouter account"
+        }
+      }
     }
   ],
   "pinData": {},
   "connections": {
-    "OpenRouter Chat Model": {
-      "ai_languageModel": [
-        [
-          {
-            "node": "AI Agent",
-            "type": "ai_languageModel",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Parse Request": {
       "main": [
         [
@@ -696,6 +683,17 @@
           }
         ]
       ]
+    },
+    "OpenRouter Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": true,
@@ -705,10 +703,9 @@
     "availableInMCP": true,
     "callerPolicy": "workflowsFromSameOwner",
     "timeSavedMode": "fixed",
-    "timezone": "Europe/Paris",
-    "executionTimeout": -1
+    "timezone": "Europe/Paris"
   },
-  "versionId": "328bb445-065e-4acf-862f-f8362326c38f",
+  "versionId": "95707340-1ca1-4df5-a3a9-19c456818db3",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "edb42c3de53a2101496ad67cb50d33e2dbab61c18e7147ed7ece354dacb70556"
