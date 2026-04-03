@@ -1,0 +1,718 @@
+{
+  "name": "Openrouter_n8n",
+  "nodes": [
+    {
+      "parameters": {
+        "model": "nvidia/nemotron-3-nano-30b-a3b:free",
+        "options": {
+          "baseURL": "https://openrouter.ai/api/v1"
+        }
+      },
+      "id": "0df89c90-4c05-4fb7-9b9b-dc2f577792d7",
+      "name": "OpenRouter Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1,
+      "position": [
+        -544,
+        -432
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "0dpVNzH7vvAv7hgX",
+          "name": "Openrouter"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body;\nconst action = body.action || 'chat';\nconst rawId = body.sessionId || ('session_' + Date.now());\nconst sessionId = rawId.replace(/-/g, '_');\n\nreturn [{\n  json: {\n    action,\n    sessionId,\n    prompt: body.prompt || '',\n    history: body.history || [],\n    fileData: body.fileData || null, // Le Base64\n    fileName: body.fileName || '',\n    fileType: body.fileType || ''\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1600,
+        -656
+      ],
+      "id": "662171b5-168a-431d-ac32-b6956fe4b3cf",
+      "name": "Parse Request"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "listSessions",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "rule-list"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "listSessions"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "loadHistory",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "rule-load"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "loadHistory"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "chat",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "rule-chat"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "chat"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "deleteSession",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "rule-delete"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "deleteSession"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        -1360,
+        -688
+      ],
+      "id": "6214132f-f37a-4047-b527-389678586fa2",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "jsCode": "const stdout = $input.first().json.stdout || '';\n\nif (!stdout || stdout.trim() === '' || stdout.includes('NO_FILES')) {\n  return [{ json: { action: 'listSessions', sessions: [] } }];\n}\n\nconst sessions = [];\nconst lines = stdout.split('\\n');\n\nfor (const line of lines) {\n  const trimmed = line.trim();\n  if (!trimmed || !trimmed.includes('.json')) continue;\n\n  const parts = trimmed.split(/\\s+/);\n  if (parts.length < 3) continue;\n\n  const isoDate  = parts[0]; // 2026-03-20T17:49\n  const msgCount = parseInt(parts[1], 10) || 0;\n  const fileName = parts[parts.length - 1].split('/').pop();\n\n  if (!fileName.startsWith('session_') || !fileName.endsWith('.json')) continue;\n\n  // Formate la date en DD/MM/YYYY HH:MM\n  const [datePart, timePart] = isoDate.split('T');\n  const [y, m, d] = (datePart || '').split('-');\n  const displayDate = (d && m && y) ? `${d}/${m}/${y} ${timePart || ''}` : isoDate;\n\n  const id = fileName.replace('.json', '');\n  const exchanges = Math.floor(msgCount / 2);\n  const title = `${displayDate} — ${exchanges} échange${exchanges > 1 ? 's' : ''}`;\n\n  sessions.push({\n    id,\n    title,\n    lastModified: isoDate,\n    displayDate,\n    messageCount: msgCount\n  });\n}\n\n// ls -t a déjà trié, mais on re-trie par sécurité\nsessions.sort((a, b) => new Date(b.lastModified) - new Date(a.lastModified));\n\nreturn [{ json: { action: 'listSessions', sessions } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        -1040
+      ],
+      "id": "102cb880-3218-44b2-92a0-750a32472598",
+      "name": "Format Sessions"
+    },
+    {
+      "parameters": {
+        "jsCode": "const sessionId = $json.sessionId;\nconst prompt = $json.prompt;\nlet history = $json.history || [];\n\nif (typeof history === 'string') {\n  try { history = JSON.parse(history); } catch (e) { history = []; }\n}\n\nlet historyContext = '';\nif (Array.isArray(history) && history.length > 0) {\n  historyContext = '\\n\\n--- Conversation history ---\\n' + \n    history.map(m => (m.role === 'user' ? 'User' : 'Assistant') + ': ' + m.content).join('\\n\\n') +\n    '\\n--- End of history ---';\n}\n\n// CRUCIAL : On renvoie le JSON ET on conserve les données binaires entrantes\nreturn [{ \n  json: { sessionId, prompt, historyContext, history },\n  binary: $binary // Ceci \"re-transmet\" l'image au nœud suivant\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -608,
+        -640
+      ],
+      "id": "266d6f6f-4725-4f6a-b5dd-5fe89c116aa0",
+      "name": "Prepare Chat Context"
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Prepare Chat Context').first().json.sessionId }}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        -368,
+        -432
+      ],
+      "id": "cadc80e9-7c8e-41bf-9732-cee8e001ee82",
+      "name": "Simple Memory"
+    },
+    {
+      "parameters": {
+        "jsCode": "const agentOutput = $input.first().json;\nconst assistantText = agentOutput.output || agentOutput.text || JSON.stringify(agentOutput);\n\nconst ctx = $('Prepare Chat Context').first().json;\nconst sessionId = ctx.sessionId;\nconst existingHistory = ctx.history || [];\nconst now = new Date().toISOString();\n\n// Fusion de l'historique\nconst updatedHistory = [\n  ...existingHistory,\n  { role: 'assistant', content: assistantText, timestamp: now }\n];\n\nconst fileContent = JSON.stringify(updatedHistory, null, 2);\n// CHEMIN FEDORA\nconst finalFile = '/home/serge/Documents/n8n/Openrouter/openrouter_chat_history/' + sessionId + '.json';\n\nreturn [{\n  json: {\n    sessionId,\n    assistantText,\n    messageCount: updatedHistory.length,\n    finalFile,\n    fileContent\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -112,
+        -640
+      ],
+      "id": "5458f448-65c6-43cd-b65b-d0ffca5784b1",
+      "name": "Build Updated History"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $('Prepare Write Command').first().json;\n\nreturn [{\n  json: {\n    action: 'chat',\n    sessionId: item.sessionId,\n    assistantOutput: item.assistantText,\n    messageCount: item.messageCount\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        -640
+      ],
+      "id": "278567e2-96de-48cb-8ad5-58fbb9f799de",
+      "name": "Chat Done"
+    },
+    {
+      "parameters": {
+        "command": "={{ $json.command }}"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        -48,
+        -256
+      ],
+      "id": "44199d62-2aa0-4006-a31a-5dc79725d68f",
+      "name": "Delete Session CMD"
+    },
+    {
+      "parameters": {
+        "jsCode": "const sessionId = $('Switch').first().json.sessionId;\nconst stdout    = $input.first().json.stdout || '';\nconst success   = stdout.includes('DELETED');\nconst error     = success ? null : 'Fichier introuvable : ' + sessionId;\nreturn [{ json: { action: 'deleteSession', sessionId, success, error } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        -256
+      ],
+      "id": "2119ebb0-692d-4486-b6b5-2ef7761731db",
+      "name": "Delete Done"
+    },
+    {
+      "parameters": {
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1392,
+        -640
+      ],
+      "id": "6cd99f6f-36af-4608-bf54-2981ed64e760",
+      "name": "Respond to Webhook",
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "jsCode": "const stdout = $input.first().json.stdout || '';\nconst ctx = $('Prepare Read Command').first().json; // On récupère l'ID ici par sécurité\nconst sessionId = ctx.sessionId;\n\nlet history = [];\nlet error = null;\n\ntry {\n  const parsed = JSON.parse(stdout);\n  // Si le JSON est enveloppé dans un objet { history: [...] }, on l'extrait\n  history = Array.isArray(parsed) ? parsed : (parsed.history || [parsed]);\n} catch(e) {\n  error = 'Parse error : ' + e.message;\n}\n\nreturn [{ \n  json: { \n    action: 'loadHistory', \n    sessionId: sessionId, // Très important pour le front-end\n    history: history, \n    error: error \n  } \n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        -880
+      ],
+      "id": "fbc05764-ea3b-44ca-925e-6b7575d4fe60",
+      "name": "Parse History"
+    },
+    {
+      "parameters": {
+        "jsCode": "const sessionId = $('Switch').first().json.sessionId.replace(/-/g, '_');\nconst baseDir = '/home/serge/Documents/n8n/Openrouter/openrouter_chat_history';\nconst filePath = baseDir + '/' + sessionId + '.json';\nconst tmpFile  = baseDir + '/tmp_read.json';\n\n// jq tronque aux 40 derniers messages et écrit dans tmp\nconst command = `jq '.[-40:]' \"${filePath}\" > \"${tmpFile}\" && cat \"${tmpFile}\"`;\n\nreturn [{ json: { sessionId, filePath, tmpFile, command } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -416,
+        -880
+      ],
+      "id": "382d1a00-2419-4188-8721-2e883aeac1c2",
+      "name": "Prepare Read Command"
+    },
+    {
+      "parameters": {
+        "command": "={{ $json.command }}"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        -48,
+        -880
+      ],
+      "id": "69e15e3e-5756-463d-880f-c68e152a9f58",
+      "name": "Read History Command"
+    },
+    {
+      "parameters": {
+        "jsCode": "const sessionId = $('Switch').first().json.sessionId.replace(/-/g, '_');\nconst baseDir = '/home/serge/Documents/n8n/Openrouter/openrouter_chat_history';\nconst filePath = `${baseDir}/${sessionId}.json`;\n\n// Commande Linux : on tente de supprimer, si ça échoue (fichier absent), on renvoie NOT_FOUND\nconst command = `rm -f \"${filePath}\" && echo DELETED || echo NOT_FOUND`;\n\nreturn [{ json: { sessionId, filePath, command } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -400,
+        -256
+      ],
+      "id": "c190030a-95e3-463e-b7b6-d94309ae7090",
+      "name": "Prepare Delete Command"
+    },
+    {
+      "parameters": {
+        "jsCode": "const fs = require('fs');\nconst path = require('path');\nconst item = $input.first().json;\nconst sessionId  = item.sessionId;\nconst finalFile  = item.finalFile;\nconst tmpFile = finalFile + '.tmp';\nfs.writeFileSync(tmpFile, item.fileContent, { encoding: 'utf8' });\n// déplacement atomique\nfs.renameSync(tmpFile, finalFile);\nreturn [{ json: { sessionId, assistantText: item.assistantText, messageCount: item.messageCount, fileWritten: true, finalFile } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        64,
+        -640
+      ],
+      "id": "766efa74-678e-4457-b7d5-2a37da666c12",
+      "name": "Prepare Write Command"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\n\nif (item.fileData && item.fileData.includes('base64,')) {\n  const base64Part = item.fileData.split('base64,')[1];\n  return [{\n    json: item,\n    binary: {\n      file0: {\n        data: base64Part,\n        fileName: item.fileName,\n        mimeType: item.fileType\n      }\n    }\n  }];\n}\nreturn $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -816,
+        -640
+      ],
+      "id": "abd21144-61a8-4bdf-a50a-6f34fb1524e0",
+      "name": "Base64 to Binary"
+    },
+    {
+      "parameters": {
+        "command": "find /home/serge/Documents/n8n/Openrouter/openrouter_chat_history -maxdepth 1 -name \"session_*.json\" -printf \"%T@ %p\\n\" 2>/dev/null | sort -rn | cut -d' ' -f2- | while read -r f; do\n  # Extraction simplifiée du nombre de messages sans dépendre de jq si possible, \n  # mais on garde jq en s'assurant qu'il est installé\n  count=$(jq '. | length' \"$f\" 2>/dev/null || echo \"0\")\n  date_str=$(stat -c '%y' \"$f\" | awk '{print $1\"T\"substr($2,1,5)}')\n  echo \"$date_str $count $(basename \"$f\")\"\ndone"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        -416,
+        -1040
+      ],
+      "id": "569df7aa-2af9-4aa3-8fd7-0637301e9d94",
+      "name": "List Files CMD"
+    },
+    {
+      "parameters": {
+        "url": "https://www.googleapis.com/customsearch/v1",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "key",
+              "value": "AIzaSyDTvVg1qeBXFS2b-MCnXpagaUQhDcgqvSY"
+            },
+            {
+              "name": "cx",
+              "value": "e4d259bbad7bb4ff9"
+            },
+            {
+              "name": "q",
+              "value": "={{ $fromAI('q', 'Search query based on the user prompt', 'string') }}"
+            }
+          ]
+        },
+        "options": {},
+        "optimizeResponse": true
+      },
+      "type": "n8n-nodes-base.httpRequestTool",
+      "typeVersion": 4.2,
+      "position": [
+        -208,
+        -432
+      ],
+      "id": "5cb70c7b-d87b-42e1-8572-d29db7ffad56",
+      "name": "Google Search1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nlet response = {};\n\nswitch (item.action) {\n  case 'listSessions':\n    response = { action: 'listSessions', sessions: item.sessions || [], count: (item.sessions || []).length };\n    break;\n  case 'loadHistory':\n    response = { action: 'loadHistory', sessionId: item.sessionId, history: item.history || [], messageCount: (item.history || []).length, error: item.error || null };\n    break;\n  case 'chat':\n    response = { action: 'chat', sessionId: item.sessionId, answer: item.assistantOutput, messageCount: item.messageCount };\n    break;\n  case 'deleteSession':\n    response = { action: 'deleteSession', sessionId: item.sessionId, success: item.success, error: item.error || null };\n    break;\n  default:\n    response = { error: 'Action inconnue : ' + item.action };\n}\n\nreturn [{ json: response }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        -640
+      ],
+      "id": "0c4341fe-163d-4bf9-b4fe-09470704ea9c",
+      "name": "Format Response1"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "openrouter",
+        "responseMode": "responseNode",
+        "options": {
+          "binaryPropertyName": "data"
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -1872,
+        -656
+      ],
+      "id": "02ed1f2c-4c3d-4019-89c6-e441818aaa48",
+      "name": "Webhook_openrouter",
+      "webhookId": "e8454861-37cf-4a35-9258-e09caf7ffa6e"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.prompt }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "=Tu es un assistant et documentaliste. Tu interroges internet pour avoir les dernières informations à jour. Tu recherches également sur un serveur MCP s'il est connecté selon le sujet pour répondre de façon structurée et complète.\nUtilise {{ $json.historyContext }}.",
+          "passthroughBinaryImages": true
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.9,
+      "position": [
+        -416,
+        -640
+      ],
+      "id": "4bbf3f54-8f9a-41cf-b438-aa4c2ef15361",
+      "name": "AI Agent"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "OpenRouter Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Request": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "List Files CMD",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Read Command",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Base64 to Binary",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Delete Command",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Sessions": {
+      "main": [
+        [
+          {
+            "node": "Format Response1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Chat Context": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Updated History": {
+      "main": [
+        [
+          {
+            "node": "Prepare Write Command",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chat Done": {
+      "main": [
+        [
+          {
+            "node": "Format Response1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete Session CMD": {
+      "main": [
+        [
+          {
+            "node": "Delete Done",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete Done": {
+      "main": [
+        [
+          {
+            "node": "Format Response1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse History": {
+      "main": [
+        [
+          {
+            "node": "Format Response1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Read Command": {
+      "main": [
+        [
+          {
+            "node": "Read History Command",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read History Command": {
+      "main": [
+        [
+          {
+            "node": "Parse History",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Delete Command": {
+      "main": [
+        [
+          {
+            "node": "Delete Session CMD",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Write Command": {
+      "main": [
+        [
+          {
+            "node": "Chat Done",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Base64 to Binary": {
+      "main": [
+        [
+          {
+            "node": "Prepare Chat Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List Files CMD": {
+      "main": [
+        [
+          {
+            "node": "Format Sessions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Search1": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Response1": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook_openrouter": {
+      "main": [
+        [
+          {
+            "node": "Parse Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Build Updated History",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "timeSavedMode": "fixed",
+    "timezone": "Europe/Paris",
+    "executionTimeout": -1
+  },
+  "versionId": "328bb445-065e-4acf-862f-f8362326c38f",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "edb42c3de53a2101496ad67cb50d33e2dbab61c18e7147ed7ece354dacb70556"
+  },
+  "id": "GctxQIK3en6HJwd9",
+  "tags": []
+}
