@@ -1,0 +1,152 @@
+---
+title: "n8n_openrouter_example"
+author: "Serge Moisan/ Gemini / Qwen3 Coder Next UD 4"
+date: "2026-04-03"
+output: html_document
+---
+
+# Openrouter_n8n
+
+Workflow n8n pour fournir une API de discussion (chat) basée sur OpenRouter, avec :
+- gestion de sessions (lister / charger / supprimer)
+- historique conversationnel persisté sur disque (JSON par session)
+- support d’un fichier joint (texte ou image en base64 → binaire n8n)
+- outils “agent” avec recherche web (Google Custom Search) et éventuel MCP (selon connexion)
+
+> Le workflow est exposé via un Webhook : openrouter.
+
+---
+
+## Aperçu
+
+L’API attend un champ action et traite 4 cas via un nœud Switch :
+
+- listSessions : liste les sessions existantes (fichiers session_*.json)
+- loadHistory : charge l’historique d’une session (tronqué à ~40 messages)
+- chat : envoie le prompt au modèle OpenRouter, ajoute la réponse à l’historique et sauvegarde
+- deleteSession : supprime le fichier JSON d’une session
+
+---
+
+## Webhook
+
+### Endpoint
+POST /webhook/openrouter
+
+Le workflow utilise un Webhook n8n nommé :
+- Webhook_openrouter
+- path : openrouter
+- responseMode : responseNode
+- binaryPropertyName : data
+
+---
+
+## Formats de requêtes (API)
+
+### 1) Lister les sessions
+
+```
+json
+{ "action": "listSessions" }
+```
+
+### 2) Charger une session
+```
+json
+{ "action": "loadHistory", "sessionId": "session_..." }
+```
+
+
+### 3) Supprimer une session
+```
+json
+{ "action": "deleteSession", "sessionId": "session_..." }
+```
+
+### 4) Lancer un chat
+Recommandé en multipart/form-data (car le workflow peut recevoir un fichier binaire).
+
+Champs :
+- action = chat
+- sessionId
+- prompt (texte)
+- history (string JSON array de messages)
+- data (optionnel) : fichier joint (nom recommandé : data côté front)
+
+---
+
+## Pièces jointes (fichiers)
+
+Le workflow sait recevoir :
+- du texte (traité comme fichier “texte” côté n8n)
+- des images : le front convertit en data URL base64, puis en Blob et l’envoie en multipart/form-data.
+Ensuite le nœud Base64 to Binary transforme fileData en binary.file0.
+
+---
+
+## Côté interface (HTML)
+
+Le repo contient une page d’interface (un chat UI) qui :
+- affiche la conversation
+- gère les sessions (localStorage côté navigateur + appels API listSessions/loadHistory/deleteSession)
+- envoie les messages au webhook en multipart/form-data
+- affiche les réponses retournées via answer
+
+⚠️ Dans ce front, la constante à adapter si besoin :
+
+```
+js
+const WEBHOOK_URL = "http://localhost:5678/webhook/openrouter";
+```
+
+
+---
+
+## Configuration indispensable : chemins des répertoires (historiques)
+
+Le workflow lit et écrit les historiques dans un dossier disque.  
+👉 Vous devez donc adapter les chemins à votre machine (vos droits utilisateur, votre arborescence, etc.).
+
+Dans le workflow, le dossier utilisé est défini à plusieurs endroits, notamment dans :
+- Build Updated History
+- Prepare Read Command
+- Prepare Delete Command
+- List Files CMD
+
+Actuellement, il pointe vers :
+/home/serge/Documents/n8n/Openrouter/openrouter_chat_history/
+
+### À faire
+1. Vérifiez que le dossier existe :
+   - openrouter_chat_history/
+2. Donnez les droits d’écriture/lecture à l’utilisateur qui exécute n8n.
+3. Remplacez toutes les occurrences du chemin par votre chemin réel.
+
+> Si vous ne modifiez pas ces chemins, la liste des sessions, le chargement et l’enregistrement échoueront.
+
+---
+
+## Prérequis
+
+- n8n installé et opérationnel
+- Commandes système disponibles dans l’environnement n8n :
+  - jq, stat, rm, etc. (utilisées par les nœuds executeCommand)
+- Une credential OpenRouter configurée dans n8n
+- (Optionnel / selon besoin) Google Custom Search :
+  - key et cx (dans Google Search1)
+- (Optionnel / selon besoin) MCP server : mentionné dans le systemMessage
+
+---
+
+## Sécurité / remarques
+
+- Les appels Access-Control-Allow-Origin: * sont permissifs (CORS).
+- Les historiques sont stockés en clair sous forme de fichiers JSON sur le disque.
+- Le workflow tronque l’historique lu aux ~40 derniers messages.
+
+---
+
+## Licence
+
+MIT (ou choisissez une licence adaptée).
+
